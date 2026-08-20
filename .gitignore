@@ -1,0 +1,77 @@
+# =============================================================
+#  VLA Policy Eval Layer — .gitignore
+#  This repo lives inside an Obsidian vault on OneDrive. Several
+#  entries below exist because of that, not because of Python.
+# =============================================================
+
+# --- Obsidian / OneDrive plumbing -----------------------------
+# .obsidian/ contains a full node_modules tree. Committing it would
+# add thousands of files and dwarf the actual project.
+.obsidian/
+.trash/
+desktop.ini
+*.sync-conflict-*
+
+# --- PRIVATE: career context, never publish -------------------
+# CLAUDE.md names the company being targeted and references personal
+# weaknesses. See README note before removing any line here.
+CLAUDE.md
+00 Design/
+04 Reviews/
+
+# --- Python ---------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Model weights & caches -----------------------------------
+# The OpenVLA checkpoint is ~15 GB. It is downloaded, never committed.
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+.cache/
+hf_cache/
+huggingface/
+
+# --- LIBERO / robosuite assets & datasets ---------------------
+libero/datasets/
+*.hdf5
+*.mcap
+
+# --- Run outputs ----------------------------------------------
+# Episode logs, rollout videos, sweep results. Regenerable by design;
+# the harness is the artifact, not the bytes it produced.
+results/
+logs/
+outputs/
+wandb/
+*.mp4
+*.webm
+
+# --- Secrets / infra ------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+.aws/
+credentials
+terraform.tfstate*
+
+# --- OS -------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Keep these ------------------------------------------------
+# Explicit un-ignores so the publishable artifacts survive the rules above.
+!results/.gitkeep
+!DECISIONS.md
+!README.md
