@@ -54,5 +54,7 @@ RUN pip install --no-cache-dir -r /opt/openvla/experiments/robot/libero/libero_r
 # transformers gets clobbered by transitive deps above. Re-pin last. This line is load-bearing.
 RUN pip install --no-cache-dir transformers==4.40.1
 
+ENV PYTHONPATH=/opt/LIBERO:${PYTHONPATH}
+
 WORKDIR /opt/openvla
 CMD ["/bin/bash"]
