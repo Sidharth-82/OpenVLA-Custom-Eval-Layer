@@ -222,3 +222,24 @@ nobody can interrogate is not a result.
 | 6. Regression + report | Two policy versions, one command, one HTML report |
 
 **Step 1 is a hard gate.** Nothing else begins until reproduction passes.
+
+## D-014 · Compute is disposable: minimal EBS, everything heavy on instance store
+
+- **Chose:** keep the EBS root volume small and put the Docker data-root, image build, and
+  Hugging Face cache on the instance-store NVMe. Terminate the box at the end of each step.
+- **Over:** provisioning a large EBS root and treating the instance as persistent.
+- **Why:** every artifact on that box is **regenerable** — the image rebuilds from the Dockerfile,
+  the checkpoint re-downloads from Hugging Face, and results are published to S3 before the box is
+  released. Nothing unique lives there, so paying for durable storage buys nothing. The instance
+  store is included in the hourly price, is substantially faster than gp3 for the layer writes a
+  docker build is dominated by, and on this instance offers 217 GB against a nearly full 145 GB
+  root.
+- **Cost accepted:** instance store is lost on *stop* as well as terminate, so an interrupted
+  session rebuilds from the Dockerfile. That is ~45 unattended minutes, and it is the price of the
+  reproducibility the Dockerfile provides anyway. It also forces the S3 publish to happen before
+  release rather than "later".
+- **General principle:** match storage durability to whether the data is reproducible. Paying to
+  persist regenerable artifacts is a common and invisible waste.
+- **Note:** an EBS root is not optional — EC2 will not boot from instance store. "No EBS" means
+  minimal EBS, not none.
+

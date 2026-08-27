@@ -13,8 +13,21 @@ FAILURES = []
 
 
 def check(name, fn):
+    """Run one check with stdin closed, and never let a failure stop the others.
+
+    stdin is redirected to /dev/null deliberately. `libero.libero` prompts interactively
+    for dataset paths on first import; with a tty attached that reads as a hang, and
+    inside this try/except it surfaced as an unrelated-looking error and cost hours on
+    2026-08-26. With no stdin a prompt raises EOFError immediately and names itself.
+    Any check in here that wants input is a check that would hang an unattended sweep.
+    """
     try:
-        detail = fn()
+        with open(os.devnull) as devnull:
+            saved, sys.stdin = sys.stdin, devnull
+            try:
+                detail = fn()
+            finally:
+                sys.stdin = saved
         print(f"  [PASS] {name}: {detail}")
     except Exception as e:  # noqa: BLE001 - we want every failure, not the first
         print(f"  [FAIL] {name}: {type(e).__name__}: {e}")
@@ -53,10 +66,20 @@ def host_ram():
 
 
 def disk():
-    free = shutil.disk_usage("/").free / 1e9
-    # Checkpoint ~15 GB + LIBERO assets + image layers.
-    assert free > 40, f"only {free:.0f} GB free — checkpoint download will fail"
-    return f"{free:.0f} GB free"
+    """Check the filesystem the checkpoint actually lands on, not '/'.
+
+    Was `shutil.disk_usage("/")`, which measures the container root — i.e. the EBS volume.
+    Per D-014 the box is disposable: HF_HOME is bind-mounted to the instance-store NVMe,
+    which is where the ~15 GB checkpoint is written. On 2026-08-26 this produced a false
+    FAIL at "37 GB free" while the actual target had 217 GB. A validation check pointed at
+    the wrong resource is worse than no check — it sends you to debug a healthy system.
+    """
+    target = os.environ.get("HF_HOME") or "/"
+    os.makedirs(target, exist_ok=True)
+    free = shutil.disk_usage(target).free / 1e9
+    # Checkpoint ~15 GB + LIBERO assets + headroom.
+    assert free > 40, f"only {free:.0f} GB free at {target} — checkpoint download will fail"
+    return f"{free:.0f} GB free at {target}"
 
 
 def mujoco_egl():

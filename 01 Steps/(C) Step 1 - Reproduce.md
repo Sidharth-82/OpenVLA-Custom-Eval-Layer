@@ -46,8 +46,8 @@ available. Use it before it stops being useful.
 
 - [x] **1.1** Verify live, do not assume: current OpenVLA LIBERO checkpoint names, the LIBERO
       install path and API, `g6.xlarge` spot price and regional availability
-- [ ] **1.2** Stand up the EC2 GPU box + Docker image. MuJoCo headless rendering is the usual
-      first fight — solve it here, not later
+- [x] **1.2** Stand up the EC2 GPU box + Docker image. MuJoCo headless rendering is the usual
+      first fight — solve it here, not later — **DONE 2026-08-26**, see 1.2 outcome below
 - [ ] **1.3** Run **one** episode of **one** task. Confirm the loop closes end to end:
       observation in -> action out -> sim steps -> episode terminates with a verdict
 - [ ] **1.4** Log per-step observations and actions for that single episode. Eyeball them.
@@ -114,6 +114,78 @@ Install: clone https://github.com/Lifelong-Robot-Learning/LIBERO, `pip install -
 **README caveat that matters to the gate:** *"Results may vary across GPU types due to
 nondeterminism."* The published numbers are A100. Reproducing on L4 introduces a variance
 source the paper did not have.
+
+
+---
+
+## 1.2 — Outcome (2026-08-26)
+
+**Done means:** `verify_env.py` passes 8/8 from a **cold `docker build`** with zero manual steps.
+Achieved on `g6.xlarge` on-demand (L4, sm_89, 23.7 GB).
+
+```
+[PASS] torch + CUDA: NVIDIA L4, 23.7 GB, torch 2.2.0+cu121, sm_89
+[PASS] transformers pin: 4.40.1
+[PASS] flash-attn: 2.5.5
+[PASS] host RAM: 16.1 GB   <-- TIGHT for a 15 GB checkpoint load
+[PASS] disk space
+[PASS] MuJoCo headless (EGL): mujoco 3.12.0, rendered (128,128,3) offscreen via EGL
+[PASS] LIBERO benchmark: libero_spatial loaded, 10 tasks,
+       task[0]='pick up the black bowl between the plate and the ramekin and place it on the plate'
+```
+
+### The predicted fight was not the real fight
+
+The plan said *"MuJoCo headless rendering is the usual first fight — solve it here, not later."*
+**EGL rendered offscreen on the first attempt.** Every hour actually spent went to packaging.
+
+### Four environment bugs, all now baked into the Dockerfile
+
+1. **`cmake` missing.** `robosuite` pulls `egl_probe`, which builds native code. pip built every
+   other wheel first, then died on it — and because pip installs atomically, *nothing* was
+   installed. That accidental abort is the only reason bug 2 didn't land.
+2. **Wrong requirements file.** LIBERO's own `requirements.txt` pins `transformers==4.21.1` and
+   `numpy==1.22.4`. Installing it would have silently downgraded transformers 19 minor versions
+   and broken OpenVLA's custom modeling code, plus broken numba (needs numpy >= 1.24).
+   **The correct file is OpenVLA's `experiments/robot/libero/libero_requirements.txt`.**
+3. **NumPy 2.x.** torch 2.2.0 is compiled against NumPy 1.x; under 2.x the bridge dies with
+   `_ARRAY_API not found`, so `torch.from_numpy()` and `.numpy()` stop working — which would
+   break every render→policy handoff. Pinned to 1.26.4 **after** the requirements install.
+4. **LIBERO's editable install registers nothing.** `setup.py` uses `find_packages()`, which
+   needs `__init__.py` at every level. `/opt/LIBERO/libero/` has none — the real package is the
+   *inner* `/opt/LIBERO/libero/libero/`. So `pip show libero` reports success while
+   `import libero` raises `ModuleNotFoundError`. It is an implicit namespace package; the fix is
+   `ENV PYTHONPATH=/opt/LIBERO`, and the correct import is the double
+   `from libero.libero import benchmark`.
+
+Also baked: `~/.libero/config.yaml`, because `libero.libero` prompts **interactively** for dataset
+paths on first import. In a container that reads as a hang — and inside an unattended Step 3 sweep
+it would be a hang at 3am with a GPU meter running.
+
+### Two of the bugs were in the gate script, not the environment
+
+> [!important] The check being wrong costs more than having no check
+> - **`try/except` swallowed an interactive prompt.** LIBERO's config prompt surfaced as a
+>   one-line failure instead of a question, and sent debugging in the wrong direction for hours.
+> - **The disk check measured the wrong filesystem.** It read `shutil.disk_usage("/")` — the EBS
+>   root, 37 GB free — and failed. The checkpoint actually lands in `HF_HOME`, bind-mounted to the
+>   instance-store NVMe with **217 GB free**. A false FAIL on a healthy environment.
+>
+> Fixed: `disk()` now resolves `HF_HOME`. Both are worth remembering — for an eval project whose
+> whole product is a trustworthy harness, **a false negative in the validation layer is the most
+> expensive kind of bug.**
+
+### Environment-variable scoping — the one that cost the most
+
+`export PYTHONPATH=...` does not survive a new shell or a container restart. The fix kept being
+applied in a different shell than the one running the script, so each verification reproduced the
+original error and looked like the fix had failed. Now `ENV` in the Dockerfile.
+
+### Recorded for the baseline table
+
+**GPU: NVIDIA L4 (sm_89), not A100.** The published numbers are A100 and the OpenVLA README warns
+results vary across GPU types. Every number this project produces is measured against an L4
+baseline; that must stay stated wherever the baseline is quoted.
 
 ## Baseline results
 
