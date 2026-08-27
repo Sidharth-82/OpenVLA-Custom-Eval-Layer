@@ -72,6 +72,37 @@ RUN pip install --no-cache-dir -r /opt/openvla/experiments/robot/libero/libero_r
 # .numpy() stop working, which breaks every render->policy handoff in the harness.
 RUN pip install --no-cache-dir transformers==4.40.1 numpy==1.26.4
 
+# --- protobuf triangle -------------------------------------------------------
+# Three packages fight over protobuf, and two of them are unpinned upstream, so a
+# fresh build resolves them forward and breaks. Diagnosed 2026-08-27:
+#
+#   tensorflow 2.15.0    -> requires protobuf <5
+#   tensorflow-metadata  -> unpinned; latest (1.21) needs protobuf >=5.27
+#                           => ImportError: cannot import name 'runtime_version'
+#   wandb                -> unpinned; latest (0.28) ships pb2 built for protobuf 5.x
+#                           => ImportError: cannot import name 'Imports' from wandb_telemetry_pb2
+#
+# protobuf lands at 4.25.x to satisfy TensorFlow, so the other two must come back to it.
+#
+# NOTE: none of this stack is used by this project. It is dragged in by
+# prismatic/__init__.py eagerly importing the RLDS *training* data loader
+# (tensorflow -> tensorflow_datasets -> dlimp), and this project never trains (D-002).
+# Pinned here because the published baseline's own repo no longer installs cleanly
+# without it — which is itself the reproducibility problem this harness exists to catch.
+RUN pip install --no-cache-dir "tensorflow-metadata==1.14.0" "wandb==0.17.9"
+
+# --- mujoco 2.3.x, NOT 3.x ---------------------------------------------------
+# robosuite==1.4.0 (pinned by libero_requirements) targets the MuJoCo 2.3.x bindings.
+# mujoco is unpinned, so a fresh build resolves it to 3.x, whose binding internals changed:
+#
+#   robosuite/utils/binding_utils.py:521, get_joint_qpos_addr()
+#   assert joint_type in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE)
+#   => bare AssertionError the moment LIBERO instantiates an env.
+#
+# 2.3.7 is the last of the 2.3 line and still provides mujoco.Renderer, which
+# src/scripts/verify_env.py uses for the EGL headless check. Diagnosed 2026-08-27.
+RUN pip install --no-cache-dir "mujoco==2.3.7"
+
 # --- LIBERO runtime config ---------------------------------------------------
 # On first import, libero.libero prompts INTERACTIVELY for dataset paths and writes
 # ~/.libero/config.yaml. In a container that prompt reads as a hang, and inside a
