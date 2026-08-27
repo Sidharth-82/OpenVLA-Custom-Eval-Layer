@@ -75,3 +75,10 @@ Thumbs.db
 !results/.gitkeep
 !DECISIONS.md
 !README.md
+
+# Docker image exports. `docker save` output is ~20 GB and is never the artifact —
+# the Dockerfile is. Keeping one around also invites "I had a tar on my laptop"
+# instead of a reproducible build (see D-014).
+*.tar
+*.tar.gz
+*.tar.zst
