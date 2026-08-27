@@ -16,8 +16,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # --- System deps -------------------------------------------------------------
 # libegl1 / libglew / libosmesa: MuJoCo rendering backends (EGL primary, OSMesa fallback)
+# cmake: robosuite pulls egl_probe, which builds native code with CMake. Without it the
+#        libero_requirements install below dies at "RuntimeError: CMake must be installed"
+#        AFTER building every other wheel. Verified 2026-08-26.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl ca-certificates build-essential \
+      git curl ca-certificates build-essential cmake \
       python3.10 python3.10-dev python3-pip \
       libegl1 libegl1-mesa-dev libgl1-mesa-glx libglew-dev libosmesa6-dev \
       libglfw3 libglib2.0-0 patchelf \
@@ -47,12 +50,43 @@ RUN pip install --no-cache-dir -e . && \
 # --- LIBERO ------------------------------------------------------------------
 WORKDIR /opt
 RUN git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
-WORKDIR /opt/LIBERO
-RUN pip install --no-cache-dir -e .
+
+# NOTE: there is deliberately no `pip install -e .` here.
+# LIBERO's setup.py uses find_packages(), which requires __init__.py at every level.
+# /opt/LIBERO/libero/ has none — the package with __init__.py is the *inner*
+# /opt/LIBERO/libero/libero/. So find_packages() never descends, the editable install
+# registers an EMPTY mapping, and `pip show libero` reports success while
+# `import libero` raises ModuleNotFoundError. Diagnosed 2026-08-26; cost most of an evening.
+# It is an implicit namespace package: putting the repo root on PYTHONPATH is the fix.
+# Correct import is the double: `from libero.libero import benchmark`.
+
+# Use OPENVLA's libero_requirements.txt, NOT LIBERO's own requirements.txt.
+# LIBERO's pins transformers==4.21.1 and numpy==1.22.4, which would silently break
+# OpenVLA's custom modeling code and numba. OpenVLA's file is curated to avoid that.
 RUN pip install --no-cache-dir -r /opt/openvla/experiments/robot/libero/libero_requirements.txt
 
-# transformers gets clobbered by transitive deps above. Re-pin last. This line is load-bearing.
-RUN pip install --no-cache-dir transformers==4.40.1
+# --- Re-pin last. These two lines are load-bearing. --------------------------
+# Transitive deps above drag both of these off their required versions.
+# numpy MUST stay <2: torch 2.2.0 is compiled against NumPy 1.x, and under NumPy 2.x
+# the torch<->numpy bridge dies with "_ARRAY_API not found" — torch.from_numpy() and
+# .numpy() stop working, which breaks every render->policy handoff in the harness.
+RUN pip install --no-cache-dir transformers==4.40.1 numpy==1.26.4
+
+# --- LIBERO runtime config ---------------------------------------------------
+# On first import, libero.libero prompts INTERACTIVELY for dataset paths and writes
+# ~/.libero/config.yaml. In a container that prompt reads as a hang, and inside a
+# try/except it surfaces as an unrelated-looking failure. Bake it so it never asks.
+# `datasets` is intentionally an empty dir: this project is inference-only (D-002) and
+# never touches the ~100 GB LIBERO demonstration set. bddl_files and init_files ship
+# in the repo and are the only assets an eval run actually needs.
+RUN mkdir -p /root/.libero /datasets && \
+    printf '%s\n' \
+      'assets: /opt/LIBERO/libero/libero/./assets' \
+      'bddl_files: /opt/LIBERO/libero/libero/./bddl_files' \
+      'benchmark_root: /opt/LIBERO/libero/libero' \
+      'datasets: /datasets' \
+      'init_states: /opt/LIBERO/libero/libero/./init_files' \
+      > /root/.libero/config.yaml
 
 ENV PYTHONPATH=/opt/LIBERO:${PYTHONPATH}
 
