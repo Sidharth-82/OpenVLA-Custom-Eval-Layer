@@ -19,25 +19,27 @@ This project builds the layer that answers those two questions:
 
 ## Status
 
-> **Step 1 of 6 — the harness runs episodes end to end.** Environment reproducible from the Dockerfile; OpenVLA-7B executing on LIBERO-Spatial with verdicts and rollout video per episode. The reproduction run at full sample size is next.
+> **Step 1 of 6 complete — the reproduction gate has passed.** Environment reproducible from a cold Dockerfile build; OpenVLA-7B reproduces the published LIBERO-Spatial baseline within a tolerance fixed before the run. The harness is now a trusted instrument, and Step 2 begins.
 
-**Smoke run, 2026-08-27** — one trial per task, all 10 LIBERO-Spatial tasks, A10G:
+**Reproduction run, 2026-08-27** — 50 trials × 10 LIBERO-Spatial tasks, A10G, seed 7:
 
 ```
-8 / 10 = 80.0%        published LIBERO-Spatial baseline: 84.7 ± 0.9%
+418 / 500 = 83.6%          published LIBERO-Spatial baseline: 84.7 ± 0.9% (n=1500, A100)
+
+gap             1.1 pp          gate (D-013)  ±5.0 pp   →   PASS
+Wilson 95% CI   [80.1%, 86.6%]  width 6.5 pp  →  84.7% falls inside
 ```
 
-> **That is not a reproduction, and it is not described as one.**
-> At n=10 the Wilson 95% interval is **[49.0%, 94.3%] — 45 points wide.** It contains the published
-> number; it also contains 50% and 94%. A run this small cannot distinguish a correct harness from
-> a broken one, so the 4.7pp gap carries no information. The gate in
-> [D-013](./DECISIONS.md) is tested at **n=500**, and that run has not happened yet.
->
-> | n | Result | Wilson 95% CI | Width |
-> |---|---|---|---|
-> | 10 | 8/10 = 80.0% | [49.0, 94.3] | **45.3 pp** |
-> | 50 | 42/50 = 84.0% | [71.5, 91.7] | 20.2 pp |
-> | 500 | 423/500 = 84.6% | [81.2, 87.5] | **6.3 pp** |
+**The gate was fixed before the run, and the derivation validated itself.** [D-013](./DECISIONS.md) estimated the standard error at n=500 as ~1.6pp, implying an interval ~6.3pp wide. The observed interval is **6.5pp** wide — the pre-run statistical model of the experiment was accurate to 0.2 percentage points. That holds independently of where the result landed; had it fallen outside ±5pp, the gate would have been failed honestly.
+
+> **Stated precisely: this result is *consistent with* the published baseline — not identical to it.** 83.6 ≠ 84.7. What has been shown is that the difference is not distinguishable from sampling and hardware variance at this sample size. That is a failure to reject, not a demonstration of equality, and the 1.1pp gap is not a reason to retroactively narrow the gate.
+
+Step 1 is a **hard gate** — nothing downstream begins until reproduction passes. It has, so the harness is now a trusted instrument: degradation measured in Steps 3–5 can be attributed to the perturbation rather than to the harness.
+
+| n | Result | Wilson 95% CI | Width |
+|---|---|---|---|
+| 10 (smoke) | 8/10 = 80.0% | [49.0, 94.3] | 45.3 pp — *cannot test the gate* |
+| **500 (reproduction)** | **418/500 = 83.6%** | **[80.1, 86.6]** | **6.5 pp** |
 
 **One finding already, from ten episodes.** Both failures ran ~90 s while every success finished in 36–57 s — the failures exhausted the step budget rather than failing fast. Binary success says *two failed*; duration already says *how*. That is the case for [D-011](./DECISIONS.md)'s dense progress signal, observed rather than assumed.
 
@@ -51,8 +53,8 @@ Nothing was wrong with the upstream code. **The environment underneath it drifte
 
 | Step | Done means | State |
 |---|---|---|
-| **1. Reproduce** | OpenVLA on unmodified LIBERO matches published SR within the D-013 gate | **1.2 ✅ env · 1.3 ✅ loop closes · 1.5 n=500 pending** |
-| 2. Runner | YAML scenario spec, seeded, containerized, JSONL → S3. Same seed twice = same result | Designed |
+| **1. Reproduce** | OpenVLA on unmodified LIBERO matches published SR within the D-013 gate | **✅ PASSED — 83.6% vs 84.7%, n=500** |
+| 2. Runner | YAML scenario spec, seeded, containerized, JSONL → S3. Same seed twice = same result | **Next** |
 | 3. Paraphrase axis | 4 instruction levels, version-controlled; sweep executes end to end | Designed |
 | 4. Failure taxonomy | Every failed episode auto-classified: grasp miss / wrong object / collision / timeout / drift | Designed |
 | 5. Slice + stats | Success rate per slice with Wilson CIs. Answers "is this delta real?" | Designed |
@@ -62,7 +64,7 @@ Nothing was wrong with the upstream code. **The environment underneath it drifte
 
 ## The reasoning is the product
 
-**→ [`DECISIONS.md`](./DECISIONS.md) — thirteen design decisions, written as they were made.**
+**→ [`DECISIONS.md`](./DECISIONS.md) — fourteen design decisions, written as they were made.**
 
 For an evaluation project this is not documentation *about* the work; it is the work. **A number nobody can interrogate is not a result.** Each entry records what was chosen, what it was chosen over, why, and — where it matters — the cost accepted and the threat to validity.
 
